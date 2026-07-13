@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Pass Dégustation — Soirée Chips Bret's</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FBF3E7;
+    --ink:#22262E;
+    --navy:#1B3A5C;
+    --coral:#FF6B57;
+    --gold:#DDA63A;
+    --line:#C9BBA4;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--cream);
+    color:var(--ink);
+    font-family:'Work Sans', sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet{
+    max-width:780px;
+    margin:0 auto;
+    padding:28px 26px 40px;
+  }
+  .toolbar{
+    max-width:780px;
+    margin:0 auto;
+    padding:14px 26px 0;
+    display:flex;
+    justify-content:flex-end;
+  }
+  .print-btn{
+    font-family:'Work Sans',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    background:var(--navy);
+    color:var(--cream);
+    border:none;
+    padding:9px 16px;
+    border-radius:999px;
+    cursor:pointer;
+  }
+  .ticket{
+    background:var(--navy);
+    color:var(--cream);
+    border-radius:18px;
+    padding:22px 24px 18px;
+    position:relative;
+    overflow:hidden;
+    margin-bottom:6px;
+  }
+  .ticket::after{
+    content:"";
+    position:absolute;
+    left:0; right:0; bottom:46px;
+    border-top:2px dashed rgba(251,243,231,0.35);
+  }
+  .ticket-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:14px;
+  }
+  .eyebrow{
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--gold);
+    font-weight:600;
+    margin:0 0 4px;
+  }
+  .ticket h1{
+    font-family:'Fredoka', sans-serif;
+    font-size:28px;
+    line-height:1.05;
+    margin:0;
+    font-weight:600;
+  }
+  .ticket h1 span{color:var(--coral);}
+  .stamp{
+    border:2px solid var(--coral);
+    color:var(--coral);
+    border-radius:50%;
+    width:64px;height:64px;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fredoka',sans-serif;
+    font-size:11px;
+    text-align:center;
+    line-height:1.1;
+    transform:rotate(8deg);
+    flex-shrink:0;
+  }
+  .ticket-fields{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px 24px;
+    margin-top:18px;
+    padding-top:14px;
+    font-size:13px;
+  }
+  .field-label{
+    color:var(--gold);
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-size:10px;
+    margin-bottom:3px;
+  }
+  .field-line{
+    border-bottom:1px solid rgba(251,243,231,0.5);
+    min-height:18px;
+  }
+  .legend{
+    margin-top:18px;
+    background:#fff;
+    border:1.5px solid var(--line);
+    border-radius:12px;
+    padding:14px 18px;
+    font-size:12.5px;
+    line-height:1.55;
+  }
+  .legend b{color:var(--navy);}
+  .round{
+    margin-top:26px;
+    page-break-inside:avoid;
+  }
+  .round-head{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:8px;
+  }
+  .round-num{
+    font-family:'Fredoka',sans-serif;
+    font-size:13px;
+    background:var(--coral);
+    color:#fff;
+    padding:3px 10px;
+    border-radius:999px;
+    font-weight:600;
+  }
+  .round-head h2{
+    font-family:'Fredoka',sans-serif;
+    font-size:17px;
+    margin:0;
+    color:var(--navy);
+    font-weight:600;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:11.5px;
+  }
+  thead th{
+    text-align:left;
+    font-size:9.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--navy);
+    border-bottom:1.5px solid var(--navy);
+    padding:5px 6px;
+  }
+  tbody td{
+    border-bottom:1px solid var(--line);
+    padding:6px 6px;
+    vertical-align:middle;
+  }
+  tbody tr:nth-child(even){background:rgba(221,166,58,0.08);}
+  .col-n{width:26px;font-family:'Fredoka',sans-serif;color:var(--coral);font-weight:600;text-align:center;}
+  .col-guess{width:auto;}
+  .guess-line{border-bottom:1px dotted #9a8d76;display:block;height:14px;}
+  .col-note{width:48px;text-align:center;}
+  .col-emoji{width:64px;text-align:center;font-size:13px;}
+  .pagebreak{page-break-before:always;}
+  .footer-block{
+    margin-top:30px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+  }
+  .award{
+    background:#fff;
+    border:1.5px dashed var(--coral);
+    border-radius:12px;
+    padding:14px 16px;
+  }
+  .award h3{
+    font-family:'Fredoka',sans-serif;
+    font-size:13px;
+    margin:0 0 6px;
+    color:var(--coral);
+  }
+  .award .line{border-bottom:1px solid var(--line);height:20px;}
+  @media print{
+    .toolbar{display:none;}
+    body{background:#fff;}
+    .ticket{background:var(--navy) !important;}
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimer ma fiche</button>
+</div>
+
+<div class="sheet">
+
+  <div class="ticket">
+    <div class="ticket-top">
+      <div>
+        <p class="eyebrow">Carte d'embarquement · Vol gustatif</p>
+        <h1>Pass Dégustation<br><span>Soirée Chips Bret's</span></h1>
+      </div>
+      <div class="stamp">59<br>SAVEURS</div>
+    </div>
+    <div class="ticket-fields">
+      <div>
+        <div class="field-label">Passagère / Passager</div>
+        <div class="field-line"></div>
+      </div>
+      <div>
+        <div class="field-label">Date du vol</div>
+        <div class="field-line"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>Comment jouer :</b> chaque chips est servie dans un bol numéroté (le numéro correspond aux lignes ci-dessous). Pour chaque numéro, note la saveur que tu devines et une note sur 10. Un coup d'eau + un bout de pain neutre entre chaque chips, une tranche de pomme toutes les 10 saveurs. Le classement final se fait à la fin de chaque manche !
+  </div>
+
+  <div class="round">
+    <div class="round-head"><span class="round-num">Manche 1</span><h2>Fondamentaux &amp; Fromagères</h2></div>
+    <table>
+      <thead><tr><th class="col-n">N°</th><th class="col-guess">Ma supposition</th><th class="col-note">Note /10</th><th class="col-emoji">😍 😐 🤢</th></tr></thead>
+      <tbody id="round1"></tbody>
+    </table>
+  </div>
+
+  <div class="round">
+    <div class="round-head"><span class="round-num">Manche 2</span><h2>Viandes, Grillades &amp; Monde</h2></div>
+    <table>
+      <thead><tr><th class="col-n">N°</th><th class="col-guess">Ma supposition</th><th class="col-note">Note /10</th><th class="col-emoji">😍 😐 🤢</th></tr></thead>
+      <tbody id="round2"></tbody>
+    </table>
+  </div>
+
+  <div class="pagebreak"></div>
+
+  <div class="round">
+    <div class="round-head"><span class="round-num">Manche 3</span><h2>BBQ &amp; Épicées</h2></div>
+    <table>
+      <thead><tr><th class="col-n">N°</th><th class="col-guess">Ma supposition</th><th class="col-note">Note /10</th><th class="col-emoji">😍 😐 🤢</th></tr></thead>
+      <tbody id="round3"></tbody>
+    </table>
+  </div>
+
+  <div class="round">
+    <div class="round-head"><span class="round-num">Manche 4</span><h2>Natures, Sarrasin &amp; So Crack</h2></div>
+    <table>
+      <thead><tr><th class="col-n">N°</th><th class="col-guess">Ma supposition</th><th class="col-note">Note /10</th><th class="col-emoji">😍 😐 🤢</th></tr></thead>
+      <tbody id="round4"></tbody>
+    </table>
+  </div>
+
+  <div class="round">
+    <div class="round-head"><span class="round-num">Bonus 🍓</span><h2>Chips de crêpes (dessert)</h2></div>
+    <table>
+      <thead><tr><th class="col-n">N°</th><th class="col-guess">Ma supposition</th><th class="col-note">Note /10</th><th class="col-emoji">😍 😐 🤢</th></tr></thead>
+      <tbody id="round5"></tbody>
+    </table>
+  </div>
+
+  <div class="footer-block">
+    <div class="award">
+      <h3>🏆 Meilleur nez de la soirée</h3>
+      <div class="line"></div>
+    </div>
+    <div class="award">
+      <h3>🙈 Plus gros loupé</h3>
+      <div class="line"></div>
+    </div>
+    <div class="award">
+      <h3>💛 Coup de cœur perso</h3>
+      <div class="line"></div>
+    </div>
+    <div class="award">
+      <h3>😬 Pire saveur pour moi</h3>
+      <div class="line"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const rounds = {
+  round1: ["Ail Confit & Herbes de Provence","Tajine de Poulet aux Épices","Brie Truffe","Beurre Persillé","Camembert & Truffe","BBQ Flambé au Whisky","BBQ à la Mexicaine","BBQ & Jalapeño","Sauce Barbecue","Cheddar Bière","Fromage Frais & Fines Herbes","Chèvre & Piment d'Espelette","Cheddar Oignons de Roscoff","Camembert"],
+  round2: ["Aligot à l'Aveyronnaise","Bleu d'Auvergne AOP","Tartiflette","Cheddar Jalapeño","Pesto Mozzarella","Fromage du Jura","Poivrons Grillés Chorizo","Pizza au Feu de Bois","Carbonara","Falafels à la Libanaise","Aïoli","Yakitori","Carbonade Flamande","Poulet Braisé"],
+  round3: ["Côte de Bœuf Grillée","Bacon Grillé","Kebab","Sauce Curry","Pili Pili","Moutarde au Piment de Cayenne","Sauce Pommes Frites","Petits Oignons","Beurre Salé","Cèpes","Sel & Vinaigre","Miel Moutarde","Nature (l'Originale)","Nature à l'Ancienne / La Paysanne"],
+  round4: ["Sel de Guérande (ondulée)","La chips Bio","Rôtisserie Nature","Rôtisserie Ail Confit & Herbes de Provence","Chips de Légumes","Sel de Guérande (sarrasin)","Curry Crème (sarrasin)","À la Forestière (sarrasin)","Nature au Sel de Guérande (So Crack)","Tomate Olive Origan (So Crack)","Sweet & Salty (So Crack)","Moutarde Pickles (So Crack)","Curry Fruité (So Crack)"],
+  round5: ["Nature (crêpe)","Fruits Rouges (crêpe)","Beurre Citron (crêpe)","Caramel au Beurre Salé (crêpe)"]
+};
+
+let counter = 1;
+for (const key of ["round1","round2","round3","round4","round5"]) {
+  const tbody = document.getElementById(key);
+  rounds[key].forEach(() => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="col-n">${counter}</td><td class="col-guess"><span class="guess-line"></span></td><td class="col-note"></td><td class="col-emoji"></td>`;
+    tbody.appendChild(tr);
+    counter++;
+  });
+}
+</script>
+
+</body>
+</html>

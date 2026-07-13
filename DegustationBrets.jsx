@@ -1,0 +1,759 @@
+import { useState, useEffect, useRef } from "react";
+import {
+  ChevronRight, ChevronLeft, Sparkles, Droplets, RotateCcw, Copy, Check,
+  Users, Trophy, Settings, RefreshCw, Medal, ArrowLeft
+} from "lucide-react";
+
+/* ---------- Données de la dégustation ---------- */
+
+const ROUNDS = [
+  { name: "Fondamentaux & Fromagères", emoji: "🧀" },
+  { name: "Viandes, Grillades & Monde", emoji: "🍖" },
+  { name: "BBQ & Épicées", emoji: "🌶️" },
+  { name: "Natures, Sarrasin & So Crack", emoji: "🥔" },
+  { name: "Bonus sucré · Chips de crêpes", emoji: "🍓" },
+];
+const ROUND_SIZES = [14, 14, 14, 13, 4];
+
+// Ordre canonique des 59 bols. À remplacer par les vraies corrections
+// quand Sylvia les donne — le Maître du jeu peut aussi les réassigner
+// directement dans l'appli (section "Corrections").
+const MASTER_FLAVORS = [
+  "Ail Confit & Herbes de Provence","Tajine de Poulet aux Épices","Brie Truffe","Beurre Persillé",
+  "Camembert & Truffe","BBQ Flambé au Whisky","BBQ à la Mexicaine","BBQ & Jalapeño","Sauce Barbecue",
+  "Cheddar Bière","Fromage Frais & Fines Herbes","Chèvre & Piment d'Espelette","Cheddar Oignons de Roscoff","Camembert",
+  "Aligot à l'Aveyronnaise","Bleu d'Auvergne AOP","Tartiflette","Cheddar Jalapeño","Pesto Mozzarella",
+  "Fromage du Jura","Poivrons Grillés Chorizo","Pizza au Feu de Bois","Carbonara","Falafels à la Libanaise",
+  "Aïoli","Yakitori","Carbonade Flamande","Poulet Braisé",
+  "Côte de Bœuf Grillée","Bacon Grillé","Kebab","Sauce Curry","Pili Pili","Moutarde au Piment de Cayenne",
+  "Sauce Pommes Frites","Petits Oignons","Beurre Salé","Cèpes","Sel & Vinaigre","Miel Moutarde",
+  "Nature (l'Originale)","Nature à l'Ancienne / La Paysanne",
+  "Sel de Guérande (ondulée)","La chips Bio","Rôtisserie Nature","Rôtisserie Ail Confit & Herbes de Provence",
+  "Chips de Légumes","Sel de Guérande (sarrasin)","Curry Crème (sarrasin)","À la Forestière (sarrasin)",
+  "Nature au Sel de Guérande (So Crack)","Tomate Olive Origan (So Crack)","Sweet & Salty (So Crack)",
+  "Moutarde Pickles (So Crack)","Curry Fruité (So Crack)",
+  "Nature (crêpe)","Fruits Rouges (crêpe)","Beurre Citron (crêpe)","Caramel au Beurre Salé (crêpe)",
+];
+
+const TOTAL = MASTER_FLAVORS.length; // 59
+
+function getRoundInfo(globalIndex) {
+  let acc = 0;
+  for (let i = 0; i < ROUNDS.length; i++) {
+    const size = ROUND_SIZES[i];
+    if (globalIndex < acc + size) {
+      return { roundIndex: i, round: ROUNDS[i], isFirstOfRound: globalIndex === acc, roundStart: acc, roundEnd: acc + size - 1 };
+    }
+    acc += size;
+  }
+  const last = ROUNDS.length - 1;
+  return { roundIndex: last, round: ROUNDS[last], isFirstOfRound: false, roundStart: acc - ROUND_SIZES[last], roundEnd: acc - 1 };
+}
+
+function noteVibe(note) {
+  if (note >= 8) return "😍";
+  if (note >= 5) return "🙂";
+  if (note >= 3) return "😐";
+  return "🤢";
+}
+
+function freshEntries() {
+  return Array.from({ length: TOTAL }, () => ({ guess: "", note: 5, touched: false }));
+}
+
+/* ---------- Correspondance approximative supposition / bonne réponse ---------- */
+
+const STOPWORDS = new Set(["de","la","le","du","des","aux","au","et","a","en","sur","sans","avec","les","un","une","d","l","la"]);
+
+function normalize(str) {
+  return (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ");
+}
+function tokens(str) {
+  return normalize(str).split(/\s+/).filter((w) => w.length >= 3 && !STOPWORDS.has(w));
+}
+function isMatch(guess, correct) {
+  if (!guess || !guess.trim()) return false;
+  const g = tokens(guess);
+  const c = tokens(correct);
+  return g.some((w) => c.includes(w));
+}
+
+/* ---------- Accès au stockage partagé ---------- */
+
+async function loadAnswers() {
+  try {
+    const r = await window.storage.get("answers", true);
+    const v = r ? JSON.parse(r.value) : null;
+    if (v && v.length === TOTAL) return v;
+  } catch (e) {}
+  return [...MASTER_FLAVORS];
+}
+async function saveAnswers(arr) {
+  await window.storage.set("answers", JSON.stringify(arr), true);
+}
+async function loadOverrides() {
+  try {
+    const r = await window.storage.get("overrides", true);
+    return r ? JSON.parse(r.value) : {};
+  } catch (e) {
+    return {};
+  }
+}
+async function saveOverrides(obj) {
+  await window.storage.set("overrides", JSON.stringify(obj), true);
+}
+async function loadPlayerData(name) {
+  try {
+    const r = await window.storage.get(`player:${name}`, true);
+    return r ? JSON.parse(r.value) : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function savePlayerData(name, data) {
+  await window.storage.set(`player:${name}`, JSON.stringify(data), true);
+}
+async function listPlayerNames() {
+  try {
+    const r = await window.storage.list("player:", true);
+    return r && r.keys ? r.keys.map((k) => k.replace(/^player:/, "")) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function scoreForRange(entries, answers, overrides, playerName, start, end) {
+  let pts = 0;
+  for (let i = start; i <= end; i++) {
+    const key = `${playerName}:${i}`;
+    const ov = overrides[key];
+    const correct = ov !== undefined ? ov : isMatch(entries[i]?.guess, answers[i]);
+    if (correct) pts++;
+  }
+  return pts;
+}
+
+function bestChipsInRange(allPlayers, start, end) {
+  // allPlayers: { name: { entries } }
+  const results = [];
+  let acc = 0;
+  for (let r = 0; r < ROUNDS.length; r++) {
+    const rStart = acc, rEnd = acc + ROUND_SIZES[r] - 1;
+    acc += ROUND_SIZES[r];
+    const lo = Math.max(rStart, start), hi = Math.min(rEnd, end);
+    if (lo > hi) continue;
+    let bestIdx = null, bestAvg = -1;
+    for (let i = lo; i <= hi; i++) {
+      let sum = 0, n = 0;
+      Object.values(allPlayers).forEach((p) => {
+        if (p?.entries?.[i]?.touched) { sum += p.entries[i].note; n++; }
+      });
+      if (n > 0) {
+        const avg = sum / n;
+        if (avg > bestAvg) { bestAvg = avg; bestIdx = i; }
+      }
+    }
+    if (bestIdx !== null) results.push({ round: r, index: bestIdx, avg: bestAvg });
+  }
+  return results;
+}
+
+/* ====================== ÉCRAN : SÉLECTION DE RÔLE ====================== */
+
+function RoleSelect({ onPick }) {
+  return (
+    <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl text-center mb-5">
+          <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">Bret's Tasting Night</p>
+          <h1 className="text-2xl font-extrabold">Qui es-tu ce soir ?</h1>
+        </div>
+        <button
+          onClick={() => onPick("player")}
+          className="w-full bg-rose-500 text-white font-bold rounded-3xl py-5 mb-3 shadow-xl flex flex-col items-center gap-1"
+        >
+          <span className="text-2xl">🙋</span>
+          <span>Je suis joueur·euse</span>
+        </button>
+        <button
+          onClick={() => onPick("master")}
+          className="w-full bg-white text-slate-900 font-bold rounded-3xl py-5 shadow-xl flex flex-col items-center gap-1"
+        >
+          <span className="text-2xl">🎛️</span>
+          <span>Je suis maître du jeu</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ====================== APPLI JOUEUR ====================== */
+
+function PlayerApp({ onBack }) {
+  const [loaded, setLoaded] = useState(false);
+  const [screen, setScreen] = useState("home");
+  const [name, setName] = useState("");
+  const [index, setIndex] = useState(0);
+  const [entries, setEntries] = useState(freshEntries());
+  const [copied, setCopied] = useState(false);
+  const [saveState, setSaveState] = useState("idle");
+  const [revealData, setRevealData] = useState(null);
+  const [revealLoading, setRevealLoading] = useState(false);
+  const saveTimer = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get("my-name", false);
+        const savedName = r ? JSON.parse(r.value) : null;
+        if (savedName) {
+          const data = await loadPlayerData(savedName);
+          if (data && Array.isArray(data.entries) && data.entries.length === TOTAL) {
+            setName(savedName);
+            setIndex(data.index || 0);
+            setEntries(data.entries);
+            setScreen(data.screen && data.screen !== "reveal" ? data.screen : "tasting");
+          }
+        }
+      } catch (e) {}
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || screen === "home" || !name) return;
+    setSaveState("saving");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await savePlayerData(name, { index, entries, screen });
+        setSaveState("saved");
+      } catch (e) {
+        setSaveState("idle");
+      }
+    }, 400);
+    return () => clearTimeout(saveTimer.current);
+  }, [name, index, entries, screen, loaded]);
+
+  const info = getRoundInfo(index);
+  const entry = entries[index];
+
+  function updateEntry(i, patch) {
+    setEntries((prev) => {
+      const next = [...prev];
+      next[i] = { ...next[i], ...patch };
+      return next;
+    });
+  }
+
+  async function startGame() {
+    const cleanName = name.trim() || "Invité";
+    setName(cleanName);
+    try { await window.storage.set("my-name", JSON.stringify(cleanName), false); } catch (e) {}
+    const existing = await loadPlayerData(cleanName);
+    if (existing && Array.isArray(existing.entries) && existing.entries.length === TOTAL) {
+      setIndex(existing.index || 0);
+      setEntries(existing.entries);
+    } else {
+      setIndex(0);
+      setEntries(freshEntries());
+    }
+    setScreen("tasting");
+  }
+
+  async function openReveal(start, end, checkpointLabel) {
+    setRevealLoading(true);
+    const answers = await loadAnswers();
+    const overrides = await loadOverrides();
+    const names = await listPlayerNames();
+    const allPlayers = {};
+    for (const n of names) {
+      const d = await loadPlayerData(n);
+      if (d) allPlayers[n] = d;
+    }
+    const leaderboard = names.map((n) => ({
+      name: n,
+      points: scoreForRange(allPlayers[n]?.entries || [], answers, overrides, n, 0, end),
+    })).sort((a, b) => b.points - a.points);
+
+    const myPoints = scoreForRange(entries, answers, overrides, name, start, end);
+    const bestChips = bestChipsInRange(allPlayers, start, end);
+
+    setRevealData({ start, end, checkpointLabel, answers, leaderboard, myPoints, bestChips });
+    setRevealLoading(false);
+    setScreen("reveal");
+  }
+
+  function goNext() {
+    updateEntry(index, { touched: true });
+    if (index === TOTAL - 1) {
+      openReveal(55, 58, "Fin du bonus sucré 🍓");
+      return;
+    }
+    const nextIndex = index + 1;
+    const nextInfo = getRoundInfo(nextIndex);
+    if (nextInfo.isFirstOfRound) {
+      const finishedRoundIndex = nextInfo.roundIndex - 1;
+      if (finishedRoundIndex === 1) {
+        setIndex(nextIndex);
+        openReveal(0, 27, "Fin de la Manche 2 🧀🍖");
+        return;
+      }
+      if (finishedRoundIndex === 3) {
+        setIndex(nextIndex);
+        openReveal(28, 54, "Fin de la Manche 4 🌶️🥔");
+        return;
+      }
+      setIndex(nextIndex);
+      setScreen("interlude");
+      return;
+    }
+    setIndex(nextIndex);
+  }
+
+  function goPrev() {
+    if (index === 0) return;
+    setIndex(index - 1);
+    setScreen("tasting");
+  }
+
+  async function restart() {
+    try { await window.storage.delete(`player:${name}`, true); } catch (e) {}
+    try { await window.storage.delete("my-name", false); } catch (e) {}
+    setScreen("home");
+    setName("");
+    setIndex(0);
+    setEntries(freshEntries());
+    setSaveState("idle");
+  }
+
+  function copyRecap() {
+    const lines = entries.map((e, i) => `n°${i + 1} — ${e.guess.trim() || "(pas de réponse)"} — ${e.note}/10`);
+    const text = `🥔 Récap dégustation Bret's — ${name}\n\n${lines.join("\n")}`;
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center">
+        <p className="text-slate-400 text-sm font-semibold">Reprise de ta session...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-orange-50 flex flex-col items-center px-4 py-6">
+      <div className="w-full max-w-sm">
+
+        <button onClick={onBack} className="text-slate-400 text-xs font-semibold flex items-center gap-1 mb-3">
+          <ArrowLeft size={13} /> changer de rôle
+        </button>
+
+        {screen === "home" && (
+          <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl">
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">Carte d'embarquement</p>
+            <h1 className="text-3xl font-extrabold leading-tight mb-1">Pass Dégustation</h1>
+            <p className="text-rose-400 font-extrabold text-2xl mb-6">Chips Bret's</p>
+            <div className="border-t border-dashed border-orange-50/30 pt-5 mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full border-2 border-rose-400 text-rose-400 text-xs font-bold text-center leading-tight rotate-6 mb-5">
+                59<br />SAVEURS
+              </div>
+              <label className="block text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">Ton prénom</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Sylvia..."
+                className="w-full bg-transparent border-b-2 border-orange-50/40 pb-2 text-lg font-semibold text-orange-50 placeholder-orange-50/30 outline-none focus:border-rose-400"
+              />
+            </div>
+            <button onClick={startGame} className="w-full bg-rose-500 text-white font-bold rounded-full py-3 flex items-center justify-center gap-2">
+              Décoller <Sparkles size={18} />
+            </button>
+            <p className="text-orange-50/50 text-xs mt-4 leading-relaxed">
+              Ta progression est partagée et sauvegardée. Ferme l'onglet si besoin, tu retomberas où tu en étais — sous le même prénom.
+            </p>
+          </div>
+        )}
+
+        {screen === "interlude" && (
+          <div className="bg-white rounded-3xl p-6 shadow-xl text-center">
+            <div className="text-4xl mb-3">🥗💧</div>
+            <h2 className="text-xl font-extrabold text-slate-900 mb-2">Pause santé</h2>
+            <p className="text-slate-500 text-sm mb-6">Eau, crudités, un peu d'air. Reset du palais avant la suite.</p>
+            <div className="bg-amber-50 rounded-2xl p-4 mb-6">
+              <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-1">Manche {info.roundIndex + 1}</p>
+              <p className="text-slate-900 font-bold">{info.round.emoji} {info.round.name}</p>
+            </div>
+            <button onClick={() => setScreen("tasting")} className="w-full bg-slate-900 text-white font-bold rounded-full py-3 flex items-center justify-center gap-2">
+              On reprend <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+
+        {screen === "tasting" && entry && (
+          <div>
+            <div className="flex items-center justify-between mb-3 text-xs font-bold text-slate-500">
+              <span>{index + 1} / {TOTAL}</span>
+              <span className="flex items-center gap-1">
+                {saveState === "saved" && <Check size={13} className="text-emerald-500" />}
+                {info.round.emoji} {info.round.name}
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-slate-200 rounded-full mb-5 overflow-hidden">
+              <div className="h-full bg-rose-500 rounded-full" style={{ width: `${((index + 1) / TOTAL) * 100}%` }} />
+            </div>
+            <div className="bg-white rounded-3xl p-6 shadow-xl">
+              <div className="flex items-center justify-center mb-6">
+                <div className="w-20 h-20 rounded-full bg-slate-900 text-amber-400 flex items-center justify-center font-extrabold text-2xl">
+                  {index + 1}
+                </div>
+              </div>
+              <p className="text-center text-slate-400 text-sm mb-6">Chips n°{index + 1} dans le bol</p>
+              <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Ta supposition de saveur</label>
+              <input
+                value={entry.guess}
+                onChange={(e) => updateEntry(index, { guess: e.target.value })}
+                placeholder="ex : fromage, barbecue, kebab..."
+                className="w-full bg-orange-50 rounded-xl px-4 py-3 text-slate-900 outline-none focus:ring-2 focus:ring-rose-400 mb-6"
+              />
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">Note</label>
+                <span className="text-lg font-extrabold text-slate-900">{entry.note}/10 <span>{noteVibe(entry.note)}</span></span>
+              </div>
+              <input
+                type="range" min="0" max="10" step="1"
+                value={entry.note}
+                onChange={(e) => updateEntry(index, { note: Number(e.target.value) })}
+                className="w-full mb-1"
+              />
+              <div className="flex items-center justify-center gap-2 text-slate-400 text-xs mt-5 mb-1">
+                <Droplets size={14} /> pense au reset palais avant la suivante
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={goPrev} disabled={index === 0} className="flex-1 bg-white text-slate-700 font-bold rounded-full py-3 flex items-center justify-center gap-1 disabled:opacity-30 shadow">
+                <ChevronLeft size={18} /> Précédent
+              </button>
+              <button onClick={goNext} className="flex-1 bg-rose-500 text-white font-bold rounded-full py-3 flex items-center justify-center gap-1 shadow">
+                {index === TOTAL - 1 ? "Terminer" : "Suivant"} <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {screen === "reveal" && (
+          <div>
+            {revealLoading || !revealData ? (
+              <div className="bg-white rounded-3xl p-8 shadow-xl text-center text-slate-400 font-semibold">Calcul des résultats...</div>
+            ) : (
+              <>
+                <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl mb-4 text-center">
+                  <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-1">Révélations</p>
+                  <h2 className="text-xl font-extrabold">{revealData.checkpointLabel}</h2>
+                </div>
+
+                <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+                  <p className="text-xs font-bold uppercase tracking-widest text-rose-500 mb-2">Tes points sur ce bloc</p>
+                  <p className="text-3xl font-extrabold text-slate-900">{revealData.myPoints} <span className="text-base font-semibold text-slate-400">/ {revealData.end - revealData.start + 1}</span></p>
+                </div>
+
+                <div className="bg-white rounded-3xl p-5 shadow-xl mb-4 max-h-60 overflow-y-auto">
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Les bonnes réponses</p>
+                  {revealData.answers.slice(revealData.start, revealData.end + 1).map((a, i) => {
+                    const globalIdx = revealData.start + i;
+                    return (
+                      <div key={globalIdx} className="flex items-center gap-2 py-1 text-sm">
+                        <span className="w-6 h-6 flex items-center justify-center rounded-full bg-orange-50 text-rose-500 font-bold text-xs flex-shrink-0">{globalIdx + 1}</span>
+                        <span className="text-slate-700">{a}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {revealData.bestChips.length > 0 && (
+                  <div className="bg-amber-50 rounded-3xl p-5 mb-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3">🏅 Meilleures chips par manche</p>
+                    {revealData.bestChips.map((b) => (
+                      <p key={b.index} className="text-sm text-slate-700 mb-1">
+                        <b>Manche {b.round + 1}</b> — n°{b.index + 1} {revealData.answers[b.index]} ({b.avg.toFixed(1)}/10)
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-1"><Trophy size={14} /> Classement général</p>
+                  {revealData.leaderboard.map((p, i) => (
+                    <div key={p.name} className="flex items-center justify-between py-1.5 border-b border-orange-100 last:border-0">
+                      <span className="text-sm font-semibold text-slate-700">
+                        {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`} {p.name}{p.name === name ? " (toi)" : ""}
+                      </span>
+                      <span className="text-sm font-extrabold text-slate-900">{p.points} pts</span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (index === TOTAL - 1) setScreen("recap");
+                    else setScreen("interlude");
+                  }}
+                  className="w-full bg-rose-500 text-white font-bold rounded-full py-3 flex items-center justify-center gap-2"
+                >
+                  {index === TOTAL - 1 ? "Voir mon récap final" : "Continuer la dégustation"} <ChevronRight size={18} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {screen === "recap" && (
+          <div>
+            <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl mb-4 text-center">
+              <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-1">Atterrissage</p>
+              <h2 className="text-2xl font-extrabold mb-1">Bravo {name} !</h2>
+              <p className="text-orange-50/60 text-sm">{entries.filter((e) => e.guess.trim()).length} / {TOTAL} saveurs commentées</p>
+            </div>
+            <div className="bg-white rounded-3xl p-4 shadow-xl mb-4 max-h-96 overflow-y-auto">
+              {entries.map((e, i) => (
+                <div key={i} className="flex items-center justify-between py-2 border-b border-orange-100 last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-7 h-7 flex items-center justify-center rounded-full bg-orange-50 text-rose-500 font-bold text-xs flex-shrink-0">{i + 1}</span>
+                    <span className="text-sm text-slate-700 truncate">{e.guess.trim() || <span className="text-slate-300">sans réponse</span>}</span>
+                  </div>
+                  <span className="text-sm font-bold text-slate-900 flex-shrink-0 ml-2">{e.note}/10</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={copyRecap} className="w-full bg-amber-400 text-slate-900 font-bold rounded-full py-3 flex items-center justify-center gap-2 mb-3">
+              {copied ? <Check size={18} /> : <Copy size={18} />} {copied ? "Copié !" : "Copier mon récap"}
+            </button>
+            <button onClick={restart} className="w-full bg-white text-slate-700 font-bold rounded-full py-3 flex items-center justify-center gap-2 shadow">
+              <RotateCcw size={18} /> Effacer et recommencer
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ====================== APPLI MAÎTRE DU JEU ====================== */
+
+function MasterApp({ onBack }) {
+  const [answers, setAnswers] = useState([...MASTER_FLAVORS]);
+  const [players, setPlayers] = useState({});
+  const [names, setNames] = useState([]);
+  const [overrides, setOverrides] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  async function refreshAll() {
+    setLoading(true);
+    const a = await loadAnswers();
+    const ov = await loadOverrides();
+    const ns = await listPlayerNames();
+    const data = {};
+    for (const n of ns) data[n] = await loadPlayerData(n);
+    setAnswers(a);
+    setOverrides(ov);
+    setNames(ns);
+    setPlayers(data);
+    setLoading(false);
+  }
+
+  useEffect(() => { refreshAll(); }, []);
+
+  const leaderboard = names
+    .map((n) => ({ name: n, points: scoreForRange(players[n]?.entries || [], answers, overrides, n, 0, TOTAL - 1), progress: (players[n]?.index ?? 0) + 1 }))
+    .sort((a, b) => b.points - a.points);
+
+  const bestChips = bestChipsInRange(players, 0, TOTAL - 1);
+
+  function updateAnswer(i, value) {
+    setAnswers((prev) => { const next = [...prev]; next[i] = value; return next; });
+  }
+
+  async function persistAnswers() {
+    await saveAnswers(answers);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1500);
+  }
+
+  function toggleOverride(playerName, chipIndex) {
+    const key = `${playerName}:${chipIndex}`;
+    const current = overrides[key] !== undefined ? overrides[key] : isMatch(players[playerName]?.entries?.[chipIndex]?.guess, answers[chipIndex]);
+    const next = { ...overrides, [key]: !current };
+    setOverrides(next);
+    saveOverrides(next);
+  }
+
+  async function resetEverything() {
+    if (!window.confirm("Effacer toutes les données de la partie (joueurs, scores, corrections) ?")) return;
+    for (const n of names) {
+      try { await window.storage.delete(`player:${n}`, true); } catch (e) {}
+    }
+    try { await window.storage.delete("overrides", true); } catch (e) {}
+    try { await window.storage.delete("answers", true); } catch (e) {}
+    refreshAll();
+  }
+
+  let acc = 0;
+  const roundRanges = ROUNDS.map((r, i) => {
+    const start = acc; acc += ROUND_SIZES[i];
+    return { ...r, start, end: acc - 1, index: i };
+  });
+
+  return (
+    <div className="min-h-screen bg-orange-50 px-4 py-6">
+      <div className="max-w-md mx-auto">
+        <button onClick={onBack} className="text-slate-400 text-xs font-semibold flex items-center gap-1 mb-3">
+          <ArrowLeft size={13} /> changer de rôle
+        </button>
+
+        <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-1">Centre de contrôle</p>
+            <h1 className="text-2xl font-extrabold flex items-center gap-2"><Settings size={20} /> Maître du jeu</h1>
+          </div>
+          <button onClick={refreshAll} className="bg-rose-500 rounded-full p-3"><RefreshCw size={18} className={loading ? "animate-spin" : ""} /></button>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-1"><Users size={14} /> Joueurs en direct ({names.length})</p>
+          {names.length === 0 && <p className="text-slate-300 text-sm">Personne n'a encore démarré.</p>}
+          {names.map((n) => (
+            <div key={n} className="mb-2">
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-semibold text-slate-700">{n}</span>
+                <span className="text-slate-400">{Math.min(players[n]?.index + 1 || 0, TOTAL)}/{TOTAL}</span>
+              </div>
+              <div className="w-full h-1.5 bg-orange-100 rounded-full overflow-hidden">
+                <div className="h-full bg-rose-400 rounded-full" style={{ width: `${(((players[n]?.index ?? 0) + 1) / TOTAL) * 100}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-1"><Trophy size={14} /> Classement général (cumulé)</p>
+          {leaderboard.map((p, i) => (
+            <div key={p.name} className="flex items-center justify-between py-1.5 border-b border-orange-100 last:border-0">
+              <span className="text-sm font-semibold text-slate-700">{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`} {p.name}</span>
+              <span className="text-sm font-extrabold text-slate-900">{p.points} pts</span>
+            </div>
+          ))}
+        </div>
+
+        {bestChips.length > 0 && (
+          <div className="bg-amber-50 rounded-3xl p-5 mb-4">
+            <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-3 flex items-center gap-1"><Medal size={14} /> Meilleures chips par manche</p>
+            {bestChips.map((b) => (
+              <p key={b.index} className="text-sm text-slate-700 mb-1">
+                <b>Manche {b.round + 1}</b> — n°{b.index + 1} {answers[b.index]} ({b.avg.toFixed(1)}/10)
+              </p>
+            ))}
+          </div>
+        )}
+
+        <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Corriger une réponse fausse côté auto</p>
+          <p className="text-xs text-slate-400 mb-3">Si l'auto-correction se trompe sur un joueur, choisis-le pour voir le détail bol par bol et inverser.</p>
+          {names.map((n) => (
+            <details key={n} className="mb-2">
+              <summary className="text-sm font-semibold text-slate-700 cursor-pointer">{n}</summary>
+              <div className="mt-2 max-h-48 overflow-y-auto pl-2">
+                {(players[n]?.entries || []).map((e, i) => {
+                  if (!e.touched) return null;
+                  const key = `${n}:${i}`;
+                  const correct = overrides[key] !== undefined ? overrides[key] : isMatch(e.guess, answers[i]);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => toggleOverride(n, i)}
+                      className={`w-full flex items-center justify-between text-xs py-1.5 px-2 rounded-lg mb-1 ${correct ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-600"}`}
+                    >
+                      <span>n°{i + 1} — {e.guess || "(vide)"} → {answers[i]}</span>
+                      <span className="font-bold">{correct ? "✓" : "✗"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </details>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">✏️ Corrections (saveur réelle par bol)</p>
+          {roundRanges.map((r) => (
+            <div key={r.index} className="mb-4">
+              <p className="text-xs font-bold text-rose-500 mb-2">{r.emoji} Manche {r.index + 1} — {r.name}</p>
+              {Array.from({ length: r.end - r.start + 1 }, (_, k) => r.start + k).map((i) => (
+                <div key={i} className="flex items-center gap-2 mb-1.5">
+                  <span className="w-6 h-6 flex items-center justify-center rounded-full bg-orange-50 text-rose-500 font-bold text-xs flex-shrink-0">{i + 1}</span>
+                  <select
+                    value={answers[i]}
+                    onChange={(e) => updateAnswer(i, e.target.value)}
+                    className="flex-1 bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none"
+                  >
+                    {MASTER_FLAVORS.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          ))}
+          <button onClick={persistAnswers} className="w-full bg-slate-900 text-white font-bold rounded-full py-3 mt-2">
+            {savedFlash ? "Enregistré ✓" : "Enregistrer les corrections"}
+          </button>
+        </div>
+
+        <button onClick={resetEverything} className="w-full bg-white text-rose-500 font-bold rounded-full py-3 shadow text-sm">
+          🧹 Réinitialiser toute la partie
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ====================== APP RACINE ====================== */
+
+export default function App() {
+  const [role, setRole] = useState(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get("last-role", false);
+        const v = r ? JSON.parse(r.value) : null;
+        if (v === "player" || v === "master") setRole(v);
+      } catch (e) {}
+      setChecking(false);
+    })();
+  }, []);
+
+  async function pickRole(r) {
+    setRole(r);
+    try { await window.storage.set("last-role", JSON.stringify(r), false); } catch (e) {}
+  }
+
+  async function backToRoleSelect() {
+    setRole(null);
+    try { await window.storage.delete("last-role", false); } catch (e) {}
+  }
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex items-center justify-center">
+        <p className="text-slate-400 text-sm font-semibold">Chargement...</p>
+      </div>
+    );
+  }
+
+  if (role === "player") return <PlayerApp onBack={backToRoleSelect} />;
+  if (role === "master") return <MasterApp onBack={backToRoleSelect} />;
+  return <RoleSelect onPick={pickRole} />;
+}
