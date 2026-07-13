@@ -63,7 +63,7 @@ function freshEntries() {
 
 /* ---------- Correspondance approximative supposition / bonne réponse ---------- */
 
-const STOPWORDS = new Set(["de","la","le","du","des","aux","au","et","a","en","sur","sans","avec","les","un","une","d","l","la"]);
+const STOPWORDS = new Set(["de","la","le","du","des","aux","au","et","a","en","sur","sans","avec","les","un","une","d","l"]);
 
 function normalize(str) {
   return (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ");
