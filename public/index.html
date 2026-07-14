@@ -220,7 +220,52 @@ function bestChipsInRange(allPlayers, start, end) {
 
 /* ====================== ÉCRAN : SÉLECTION DE RÔLE ====================== */
 
+const MASTER_CODE = "3006";
+
 function RoleSelect({ onPick }) {
+  const [askCode, setAskCode] = useState(false);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState(false);
+
+  function submitCode() {
+    if (code.trim() === MASTER_CODE) {
+      onPick("master");
+    } else {
+      setError(true);
+      setCode("");
+    }
+  }
+
+  if (askCode) {
+    return (
+      <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center px-4">
+        <div className="w-full max-w-sm">
+          <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl">
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">Accès réservé</p>
+            <h1 className="text-2xl font-extrabold mb-4">Code du maître du jeu</h1>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => { setCode(e.target.value); setError(false); }}
+              onKeyDown={(e) => e.key === "Enter" && submitCode()}
+              placeholder="••••"
+              autoFocus
+              className="w-full bg-transparent border-b-2 border-orange-50/40 pb-2 text-2xl tracking-widest font-semibold text-orange-50 placeholder-orange-50/30 outline-none focus:border-rose-400 mb-2"
+            />
+            {error && <p className="text-rose-400 text-xs font-semibold mb-4">Code incorrect, réessaie.</p>}
+            <button onClick={submitCode} className={"w-full bg-rose-500 text-white font-bold rounded-full py-3 mt-2" + (error ? "" : " mt-4")}>
+              Valider
+            </button>
+            <button onClick={() => { setAskCode(false); setCode(""); setError(false); }} className="w-full text-orange-50/50 text-xs font-semibold mt-4">
+              ← changer de rôle
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-orange-50 flex flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm">
@@ -236,7 +281,7 @@ function RoleSelect({ onPick }) {
           <span>Je suis joueur·euse</span>
         </button>
         <button
-          onClick={() => onPick("master")}
+          onClick={() => setAskCode(true)}
           className="w-full bg-white text-slate-900 font-bold rounded-3xl py-5 shadow-xl flex flex-col items-center gap-1"
         >
           <span className="text-2xl">🎛️</span>
