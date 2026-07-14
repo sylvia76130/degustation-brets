@@ -12,5 +12,10 @@ service cloud.firestore {
     match /meta/{docId} {
       allow read, write: if docId in ["answers", "overrides"];
     }
+    match /shopping/{itemId} {
+      allow read: if true;
+      allow write: if (!("buyer" in request.resource.data) || request.resource.data.buyer is string)
+                   && (!("date" in request.resource.data) || request.resource.data.date is string);
+    }
   }
 }
