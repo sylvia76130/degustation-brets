@@ -12,6 +12,8 @@
 <meta name="theme-color" content="#0f172a">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -19,9 +21,7 @@
     "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
     "react/jsx-dev-runtime": "https://esm.sh/react@18.3.1/jsx-dev-runtime",
     "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react",
-    "firebase/app": "https://esm.sh/firebase@10.14.1/app",
-    "firebase/firestore": "https://esm.sh/firebase@10.14.1/firestore"
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react"
   }
 }
 </script>
@@ -37,13 +37,7 @@ import {
   ChevronRight, ChevronLeft, Sparkles, Droplets, RotateCcw, Copy, Check,
   Users, Trophy, Settings, RefreshCw, Medal, ArrowLeft
 } from "lucide-react";
-import { initializeApp } from "firebase/app";
-import {
-  getFirestore, doc, setDoc, getDoc, deleteDoc, collection, onSnapshot,
-  serverTimestamp
-} from "firebase/firestore";
-
-/* ---------- Firebase ---------- */
+/* ---------- Firebase (SDK compat, chargé en scripts globaux) ---------- */
 
 const firebaseConfig = {
   apiKey: "AIzaSyD7yse_HDyDwXX_akwVfA_ABbOMHRZdK8o",
@@ -53,8 +47,9 @@ const firebaseConfig = {
   messagingSenderId: "1069235432277",
   appId: "1:1069235432277:web:c7c9dcf75de0ed43739ddc"
 };
-const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const serverTimestamp = () => firebase.firestore.FieldValue.serverTimestamp();
 
 /* ---------- Données de la dégustation ---------- */
 
@@ -138,41 +133,41 @@ function playerDocId(name) {
 
 async function loadAnswers() {
   try {
-    const snap = await getDoc(doc(db, "meta", "answers"));
-    const v = snap.exists() ? snap.data().value : null;
+    const snap = await db.collection("meta").doc("answers").get();
+    const v = snap.exists ? snap.data().value : null;
     if (v && v.length === TOTAL) return v;
   } catch (e) {}
   return [...MASTER_FLAVORS];
 }
 async function saveAnswers(arr) {
-  await setDoc(doc(db, "meta", "answers"), { value: arr });
+  await db.collection("meta").doc("answers").set({ value: arr });
 }
 async function loadOverrides() {
   try {
-    const snap = await getDoc(doc(db, "meta", "overrides"));
-    return snap.exists() ? snap.data().value || {} : {};
+    const snap = await db.collection("meta").doc("overrides").get();
+    return snap.exists ? snap.data().value || {} : {};
   } catch (e) {
     return {};
   }
 }
 async function saveOverrides(obj) {
-  await setDoc(doc(db, "meta", "overrides"), { value: obj });
+  await db.collection("meta").doc("overrides").set({ value: obj });
 }
 async function loadPlayerData(name) {
   try {
-    const snap = await getDoc(doc(db, "players", playerDocId(name)));
-    return snap.exists() ? snap.data() : null;
+    const snap = await db.collection("players").doc(playerDocId(name)).get();
+    return snap.exists ? snap.data() : null;
   } catch (e) {
     return null;
   }
 }
 async function savePlayerData(name, data) {
-  await setDoc(doc(db, "players", playerDocId(name)), {
+  await db.collection("players").doc(playerDocId(name)).set({
     name, ...data, updatedAt: serverTimestamp()
   }, { merge: true });
 }
 async function deletePlayerData(name) {
-  try { await deleteDoc(doc(db, "players", playerDocId(name))); } catch (e) {}
+  try { await db.collection("players").doc(playerDocId(name)).delete(); } catch (e) {}
 }
 
 /* ---------- Persistance locale (privée, par téléphone) ---------- */
@@ -584,7 +579,7 @@ function MasterApp({ onBack }) {
   const [savedFlash, setSavedFlash] = useState(false);
 
   useEffect(() => {
-    const unsubPlayers = onSnapshot(collection(db, "players"), (snap) => {
+    const unsubPlayers = db.collection("players").onSnapshot((snap) => {
       const data = {};
       const ns = [];
       snap.forEach((d) => { data[d.id] = d.data(); ns.push(d.id); });
@@ -593,13 +588,13 @@ function MasterApp({ onBack }) {
       setLoading(false);
     }, () => setLoading(false));
 
-    const unsubAnswers = onSnapshot(doc(db, "meta", "answers"), (snap) => {
-      const v = snap.exists() ? snap.data().value : null;
+    const unsubAnswers = db.collection("meta").doc("answers").onSnapshot((snap) => {
+      const v = snap.exists ? snap.data().value : null;
       setAnswers(v && v.length === TOTAL ? v : [...MASTER_FLAVORS]);
     });
 
-    const unsubOverrides = onSnapshot(doc(db, "meta", "overrides"), (snap) => {
-      setOverrides(snap.exists() ? snap.data().value || {} : {});
+    const unsubOverrides = db.collection("meta").doc("overrides").onSnapshot((snap) => {
+      setOverrides(snap.exists ? snap.data().value || {} : {});
     });
 
     return () => { unsubPlayers(); unsubAnswers(); unsubOverrides(); };
@@ -632,10 +627,10 @@ function MasterApp({ onBack }) {
   async function resetEverything() {
     if (!window.confirm("Effacer toutes les données de la partie (joueurs, scores, corrections) ?")) return;
     for (const n of names) {
-      try { await deleteDoc(doc(db, "players", n)); } catch (e) {}
+      try { await db.collection("players").doc(n).delete(); } catch (e) {}
     }
-    try { await deleteDoc(doc(db, "meta", "overrides")); } catch (e) {}
-    try { await deleteDoc(doc(db, "meta", "answers")); } catch (e) {}
+    try { await db.collection("meta").doc("overrides").delete(); } catch (e) {}
+    try { await db.collection("meta").doc("answers").delete(); } catch (e) {}
   }
 
   let acc = 0;
