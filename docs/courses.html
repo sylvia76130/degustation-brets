@@ -46,18 +46,12 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-/* ---------- Données (mêmes saveurs que l'appli de dégustation) ---------- */
+/* ---------- Données ---------- */
+/* Liste volontairement à plat et triée par ordre alphabétique : cette page
+   est partagée avec les participants, donc aucun regroupement par manche
+   ni référence à l'appli de jeu (ça spoilerait la dégustation). */
 
-const ROUNDS = [
-  { name: "Fondamentaux & Fromagères", emoji: "🧀" },
-  { name: "Viandes, Grillades & Monde", emoji: "🍖" },
-  { name: "BBQ & Épicées", emoji: "🌶️" },
-  { name: "Natures, Sarrasin & So Crack", emoji: "🥔" },
-  { name: "Bonus sucré · Chips de crêpes", emoji: "🍓" },
-];
-const ROUND_SIZES = [14, 14, 14, 13, 4];
-
-const FLAVORS = [
+const FLAVORS_RAW = [
   "Ail Confit & Herbes de Provence","Tajine de Poulet aux Épices","Brie Truffe","Beurre Persillé",
   "Camembert & Truffe","BBQ Flambé au Whisky","BBQ à la Mexicaine","BBQ & Jalapeño","Sauce Barbecue",
   "Cheddar Bière","Fromage Frais & Fines Herbes","Chèvre & Piment d'Espelette","Cheddar Oignons de Roscoff","Camembert",
@@ -74,13 +68,11 @@ const FLAVORS = [
   "Nature (crêpe)","Fruits Rouges (crêpe)","Beurre Citron (crêpe)","Caramel au Beurre Salé (crêpe)",
 ];
 
-let acc = 0;
-const roundRanges = ROUNDS.map((r, i) => {
-  const start = acc; acc += ROUND_SIZES[i];
-  return { ...r, start, end: acc - 1, index: i };
-});
-
-function flavorId(i) { return "f" + i; }
+// { flavor, id } trié alphabétiquement — l'id garde une référence stable en base
+// mais n'est jamais affiché, donc aucun ordre/numéro n'est révélé aux joueurs.
+const FLAVORS = FLAVORS_RAW
+  .map((flavor, i) => ({ flavor, id: "f" + i }))
+  .sort((a, b) => a.flavor.localeCompare(b.flavor, "fr"));
 
 /* ---------- App ---------- */
 
@@ -99,8 +91,7 @@ function App() {
     return unsub;
   }, []);
 
-  function updateItem(i, patch) {
-    const id = flavorId(i);
+  function updateItem(id, patch) {
     setItems((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
     if (saveTimers.current[id]) clearTimeout(saveTimers.current[id]);
     saveTimers.current[id] = setTimeout(() => {
@@ -129,44 +120,37 @@ function App() {
           </div>
         </div>
 
-        {roundRanges.map((r) => (
-          <div key={r.index} className="bg-white rounded-3xl p-5 shadow-xl mb-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-rose-500 mb-3">{r.emoji} Manche {r.index + 1} — {r.name}</p>
-
-            <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-1">
-              <span>Saveur</span>
-              <span className="text-right">Acheteur · Date</span>
-            </div>
-
-            {Array.from({ length: r.end - r.start + 1 }, (_, k) => r.start + k).map((i) => {
-              const id = flavorId(i);
-              const item = items[id] || {};
-              const done = !!(item.buyer && item.buyer.trim());
-              return (
-                <div key={i} className={"flex items-center gap-2 py-2 border-b border-orange-100 last:border-0" + (done ? "" : "")}>
-                  <span className="w-6 h-6 flex items-center justify-center rounded-full bg-orange-50 text-rose-500 font-bold text-xs flex-shrink-0">{i + 1}</span>
-                  <span className={"flex-1 text-sm min-w-0 truncate " + (done ? "text-slate-400 line-through" : "text-slate-700")}>{FLAVORS[i]}</span>
-                  <input
-                    type="text"
-                    value={item.buyer || ""}
-                    onChange={(e) => updateItem(i, { buyer: e.target.value })}
-                    placeholder="Qui ?"
-                    className="w-24 bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 flex-shrink-0"
-                  />
-                  <input
-                    type="date"
-                    value={item.date || ""}
-                    onChange={(e) => updateItem(i, { date: e.target.value })}
-                    className="w-[124px] bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 flex-shrink-0"
-                  />
-                </div>
-              );
-            })}
+        <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+          <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-2">
+            <span>Saveur</span>
+            <span className="text-right">Acheteur · Date</span>
           </div>
-        ))}
+
+          {FLAVORS.map(({ flavor, id }) => {
+            const item = items[id] || {};
+            const done = !!(item.buyer && item.buyer.trim());
+            return (
+              <div key={id} className="flex items-center gap-2 py-2 border-b border-orange-100 last:border-0">
+                <span className={"flex-1 text-sm min-w-0 truncate " + (done ? "text-slate-400 line-through" : "text-slate-700")}>{flavor}</span>
+                <input
+                  type="text"
+                  value={item.buyer || ""}
+                  onChange={(e) => updateItem(id, { buyer: e.target.value })}
+                  placeholder="Qui ?"
+                  className="w-24 bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 flex-shrink-0"
+                />
+                <input
+                  type="date"
+                  value={item.date || ""}
+                  onChange={(e) => updateItem(id, { date: e.target.value })}
+                  className="w-[124px] bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 flex-shrink-0"
+                />
+              </div>
+            );
+          })}
+        </div>
 
         <p className="text-center text-xs text-slate-400 mt-2">📡 Mis à jour en direct pour tout le monde.</p>
-        <a href="index.html" className="block text-center text-slate-400 text-xs font-semibold mt-4">← retour à la dégustation</a>
       </div>
     </div>
   );
