@@ -15,7 +15,8 @@ service cloud.firestore {
     match /shopping/{itemId} {
       allow read: if true;
       allow write: if (!("buyer" in request.resource.data) || request.resource.data.buyer is string)
-                   && (!("date" in request.resource.data) || request.resource.data.date is string);
+                   && (!("date" in request.resource.data) || request.resource.data.date is string)
+                   && (!("expiry" in request.resource.data) || request.resource.data.expiry is string);
     }
   }
 }

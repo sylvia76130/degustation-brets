@@ -24,7 +24,14 @@
   }
 }
 </script>
-<style>body{margin:0;}</style>
+<style>
+body{margin:0;}
+.print-only{display:none;}
+@media print {
+  .screen-only{display:none !important;}
+  .print-only{display:block !important;}
+}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -74,12 +81,24 @@ const FLAVORS = FLAVORS_RAW
   .map((flavor, i) => ({ flavor, id: "f" + i }))
   .sort((a, b) => a.flavor.localeCompare(b.flavor, "fr"));
 
+const BUYERS = ["Astrid", "Nicolas", "Morgane", "Lucas", "Baptiste", "Mélanie", "Sylvia", "Xavier"];
+
+function formatDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 /* ---------- App ---------- */
 
 function App() {
   const [items, setItems] = useState({});
   const [loading, setLoading] = useState(true);
+  const [printMode, setPrintMode] = useState(null); // null | "missing" | "byBuyer"
   const saveTimers = useRef({});
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   useEffect(() => {
     const unsub = db.collection("shopping").onSnapshot((snap) => {
@@ -91,13 +110,23 @@ function App() {
     return unsub;
   }, []);
 
+  useEffect(() => {
+    if (!printMode) return;
+    const t = setTimeout(() => window.print(), 150);
+    function onAfterPrint() { setPrintMode(null); }
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => { clearTimeout(t); window.removeEventListener("afterprint", onAfterPrint); };
+  }, [printMode]);
+
   function updateItem(id, patch) {
     setItems((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
     if (saveTimers.current[id]) clearTimeout(saveTimers.current[id]);
     saveTimers.current[id] = setTimeout(() => {
+      const current = itemsRef.current[id] || {};
       db.collection("shopping").doc(id).set({
-        buyer: (items[id]?.buyer ?? "") ,
-        date: (items[id]?.date ?? ""),
+        buyer: current.buyer ?? "",
+        date: current.date ?? "",
+        expiry: current.expiry ?? "",
         ...patch,
       }, { merge: true });
     }, 400);
@@ -106,53 +135,146 @@ function App() {
   const total = FLAVORS.length;
   const assigned = Object.values(items).filter((v) => v?.buyer && v.buyer.trim()).length;
 
+  const soonestExpiry = Object.values(items)
+    .map((v) => v?.expiry)
+    .filter(Boolean)
+    .sort()[0];
+
+  const missingFlavors = FLAVORS.filter(({ id }) => !(items[id]?.buyer && items[id].buyer.trim()));
+
+  const byBuyer = {};
+  FLAVORS.forEach(({ flavor, id }) => {
+    const b = items[id]?.buyer;
+    if (b && b.trim()) {
+      if (!byBuyer[b]) byBuyer[b] = [];
+      byBuyer[b].push({ flavor, expiry: items[id]?.expiry });
+    }
+  });
+  const buyersWithItems = BUYERS.filter((b) => byBuyer[b]?.length);
+
   return (
-    <div className="min-h-screen bg-orange-50 px-4 py-6">
-      <div className="max-w-lg mx-auto">
-        <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl mb-4">
-          <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-1">Avant la soirée</p>
-          <h1 className="text-2xl font-extrabold mb-2">🛒 Courses à faire</h1>
-          <p className="text-orange-50/60 text-sm">
-            {loading ? "Chargement..." : `${assigned} / ${total} saveurs prises en charge`}
-          </p>
-          <div className="w-full h-1.5 bg-white/10 rounded-full mt-3 overflow-hidden">
-            <div className="h-full bg-rose-500 rounded-full" style={{ width: `${total ? (assigned / total) * 100 : 0}%` }} />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
-          <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-2">
-            <span>Saveur</span>
-            <span className="text-right">Acheteur · Date</span>
-          </div>
-
-          {FLAVORS.map(({ flavor, id }) => {
-            const item = items[id] || {};
-            const done = !!(item.buyer && item.buyer.trim());
-            return (
-              <div key={id} className="flex items-center gap-2 py-2 border-b border-orange-100 last:border-0">
-                <span className={"flex-1 text-sm min-w-0 truncate " + (done ? "text-slate-400 line-through" : "text-slate-700")}>{flavor}</span>
-                <input
-                  type="text"
-                  value={item.buyer || ""}
-                  onChange={(e) => updateItem(id, { buyer: e.target.value })}
-                  placeholder="Qui ?"
-                  className="w-24 bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 flex-shrink-0"
-                />
-                <input
-                  type="date"
-                  value={item.date || ""}
-                  onChange={(e) => updateItem(id, { date: e.target.value })}
-                  className="w-[124px] bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 flex-shrink-0"
-                />
+    <>
+      <div className="screen-only min-h-screen bg-orange-50 px-4 py-6">
+        <div className="max-w-lg mx-auto">
+          <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl mb-4">
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-1">Avant la soirée</p>
+            <h1 className="text-2xl font-extrabold mb-2">🛒 Courses à faire</h1>
+            <p className="text-orange-50/60 text-sm mb-3">
+              {loading ? "Chargement..." : `${assigned} / ${total} saveurs prises en charge`}
+            </p>
+            <div className="w-full h-1.5 bg-white/10 rounded-full mb-4 overflow-hidden">
+              <div className="h-full bg-rose-500 rounded-full" style={{ width: `${total ? (assigned / total) * 100 : 0}%` }} />
+            </div>
+            {soonestExpiry ? (
+              <div className="bg-rose-500/15 border border-rose-400/40 rounded-2xl px-4 py-3">
+                <p className="text-rose-300 text-[10px] font-bold uppercase tracking-widest mb-0.5">⏳ Deadline soirée</p>
+                <p className="text-orange-50 text-sm font-bold">Avant le {formatDate(soonestExpiry)}</p>
+                <p className="text-orange-50/50 text-xs mt-0.5">Date de péremption la plus proche parmi tous les paquets.</p>
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <p className="text-orange-50/40 text-xs">Aucune date de péremption renseignée pour l'instant.</p>
+            )}
+          </div>
 
-        <p className="text-center text-xs text-slate-400 mt-2">📡 Mis à jour en direct pour tout le monde.</p>
+          <div className="flex gap-3 mb-4">
+            <button
+              onClick={() => setPrintMode("missing")}
+              className="flex-1 bg-white text-slate-900 font-bold rounded-full py-3 text-sm shadow-xl"
+            >
+              📄 Export : reste à acheter
+            </button>
+            <button
+              onClick={() => setPrintMode("byBuyer")}
+              className="flex-1 bg-white text-slate-900 font-bold rounded-full py-3 text-sm shadow-xl"
+            >
+              📄 Export : qui ramène quoi
+            </button>
+          </div>
+
+          <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
+            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-2">
+              <span>Saveur</span>
+              <span>Acheteur</span>
+              <span>Achat</span>
+              <span>Péremption</span>
+            </div>
+
+            {FLAVORS.map(({ flavor, id }) => {
+              const item = items[id] || {};
+              const done = !!(item.buyer && item.buyer.trim());
+              return (
+                <div key={id} className="py-3 border-b border-orange-100 last:border-0">
+                  <p className={"text-sm mb-1.5 " + (done ? "text-slate-400 line-through" : "text-slate-700 font-semibold")}>{flavor}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      value={item.buyer || ""}
+                      onChange={(e) => updateItem(id, { buyer: e.target.value })}
+                      className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400"
+                    >
+                      <option value="">— Qui ? —</option>
+                      {BUYERS.map((b) => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                    <label className="flex items-center gap-1 text-[10px] text-slate-400">
+                      Achat
+                      <input
+                        type="date"
+                        value={item.date || ""}
+                        onChange={(e) => updateItem(id, { date: e.target.value })}
+                        className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400"
+                      />
+                    </label>
+                    <label className="flex items-center gap-1 text-[10px] text-slate-400">
+                      DLC
+                      <input
+                        type="date"
+                        value={item.expiry || ""}
+                        onChange={(e) => updateItem(id, { expiry: e.target.value })}
+                        className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400"
+                      />
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-center text-xs text-slate-400 mt-2">📡 Mis à jour en direct pour tout le monde.</p>
+        </div>
       </div>
-    </div>
+
+      {printMode === "missing" && (
+        <div className="print-only p-8 text-slate-900">
+          <h1 className="text-xl font-bold mb-1">🥔 Chips Bret's — Reste à acheter</h1>
+          <p className="text-xs text-slate-500 mb-6">Généré le {formatDate(new Date().toISOString().slice(0, 10))} — {missingFlavors.length} saveur(s) restante(s)</p>
+          <ul className="space-y-2">
+            {missingFlavors.map(({ flavor, id }) => (
+              <li key={id} className="text-sm">☐ {flavor}</li>
+            ))}
+          </ul>
+          {missingFlavors.length === 0 && <p className="text-sm text-slate-500">Tout est pris en charge, bravo !</p>}
+        </div>
+      )}
+
+      {printMode === "byBuyer" && (
+        <div className="print-only p-8 text-slate-900">
+          <h1 className="text-xl font-bold mb-1">🥔 Chips Bret's — Qui ramène quoi</h1>
+          <p className="text-xs text-slate-500 mb-6">Généré le {formatDate(new Date().toISOString().slice(0, 10))}</p>
+          {buyersWithItems.length === 0 && <p className="text-sm text-slate-500">Personne n'a encore été assigné.</p>}
+          {buyersWithItems.map((b) => (
+            <div key={b} className="mb-5">
+              <h2 className="text-sm font-bold mb-1.5">{b}</h2>
+              <ul className="space-y-1 pl-1">
+                {byBuyer[b].map(({ flavor, expiry }, i) => (
+                  <li key={i} className="text-sm">
+                    — {flavor}{expiry ? ` (DLC ${formatDate(expiry)})` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
