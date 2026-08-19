@@ -155,7 +155,7 @@ function App() {
   return (
     <>
       <div className="screen-only min-h-screen bg-orange-50 px-4 py-6">
-        <div className="max-w-lg mx-auto">
+        <div className="max-w-lg md:max-w-3xl mx-auto">
           <div className="bg-slate-900 text-orange-50 rounded-3xl p-6 shadow-xl mb-4">
             <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-1">Avant la soirée</p>
             <h1 className="text-2xl font-extrabold mb-2">🛒 Courses à faire</h1>
@@ -192,7 +192,7 @@ function App() {
           </div>
 
           <div className="bg-white rounded-3xl p-5 shadow-xl mb-4">
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 gap-y-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-2">
+            <div className="hidden md:grid md:grid-cols-[1fr_140px_150px_150px] md:gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 mb-2">
               <span>Saveur</span>
               <span>Acheteur</span>
               <span>Achat</span>
@@ -203,33 +203,33 @@ function App() {
               const item = items[id] || {};
               const done = !!(item.buyer && item.buyer.trim());
               return (
-                <div key={id} className="py-3 border-b border-orange-100 last:border-0">
-                  <p className={"text-sm mb-1.5 " + (done ? "text-slate-400 line-through" : "text-slate-700 font-semibold")}>{flavor}</p>
-                  <div className="flex flex-wrap gap-2">
+                <div key={id} className="py-3 border-b border-orange-100 last:border-0 md:grid md:grid-cols-[1fr_140px_150px_150px] md:items-center md:gap-4">
+                  <p className={"text-sm mb-1.5 md:mb-0 " + (done ? "text-slate-400 line-through" : "text-slate-700 font-semibold")}>{flavor}</p>
+                  <div className="flex flex-wrap gap-2 md:contents">
                     <select
                       value={item.buyer || ""}
                       onChange={(e) => updateItem(id, { buyer: e.target.value })}
-                      className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400"
+                      className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 md:w-full"
                     >
                       <option value="">— Qui ? —</option>
                       {BUYERS.map((b) => <option key={b} value={b}>{b}</option>)}
                     </select>
-                    <label className="flex items-center gap-1 text-[10px] text-slate-400">
-                      Achat
+                    <label className="flex items-center gap-1 text-[10px] text-slate-400 md:w-full">
+                      <span className="md:hidden">Achat</span>
                       <input
                         type="date"
                         value={item.date || ""}
                         onChange={(e) => updateItem(id, { date: e.target.value })}
-                        className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400"
+                        className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 md:w-full"
                       />
                     </label>
-                    <label className="flex items-center gap-1 text-[10px] text-slate-400">
-                      DLC
+                    <label className="flex items-center gap-1 text-[10px] text-slate-400 md:w-full">
+                      <span className="md:hidden">DLC</span>
                       <input
                         type="date"
                         value={item.expiry || ""}
                         onChange={(e) => updateItem(id, { expiry: e.target.value })}
-                        className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400"
+                        className="bg-orange-50 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-rose-400 md:w-full"
                       />
                     </label>
                   </div>
